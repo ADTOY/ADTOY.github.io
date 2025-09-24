@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="zh">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-  <title>报价表（支持覆盖+跨设备同步）</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>网页版报价表（SheetJS + Luckysheet）</title>
 
   <!-- Luckysheet 样式 -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/luckysheet/dist/plugins/css/pluginsCss.css" />
@@ -11,199 +11,298 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/luckysheet/dist/css/luckysheet.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/luckysheet/dist/assets/iconfont/iconfont.css" />
 
-  <!-- Luckysheet 脚本 -->
+  <!-- Luckysheet JS -->
   <script src="https://cdn.jsdelivr.net/npm/luckysheet/dist/plugins/js/plugin.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/luckysheet/dist/luckysheet.umd.js"></script>
 
-  <!-- LuckyExcel：Excel ↔ Luckysheet（支持样式） -->
-  <script src="https://cdn.jsdelivr.net/gh/oy-paddy/luckysheet_import_export/dist/luckyexcel.js"></script>
+  <!-- SheetJS -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
-  <!-- html2canvas：导出图片 -->
+  <!-- html2canvas -->
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
   <style>
-    body { margin: 0; padding: 0; font-family: sans-serif; }
-    #luckysheet { width: 100%; height: calc(100vh - 60px); }
+    body { margin:0; padding:0; font-family: Arial, sans-serif; }
     .toolbar {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      align-items: center;
-      padding: 8px;
-      background: #f5f5f5;
+      display:flex; flex-wrap:wrap; gap:8px;
+      padding:8px; background:#f5f5f5;
+      align-items:center; justify-content:center;
     }
-    .toolbar button, .toolbar input {
-      flex: 1 1 auto;
-      min-width: 90px;
-      margin: 5px;
-      padding: 8px;
-      font-size: 14px;
+    .toolbar input, .toolbar button {
+      min-width:90px; padding:8px; font-size:14px;
     }
+    #luckysheet { width:100%; height:calc(100vh - 64px); }
     .toast {
-      position: fixed;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(0,0,0,0.75);
-      color: #fff;
-      padding: 10px 20px;
-      border-radius: 5px;
-      font-size: 14px;
-      display: none;
-      z-index: 9999;
+      position:fixed; bottom:20px; left:50%;
+      transform:translateX(-50%);
+      background:rgba(0,0,0,0.8); color:#fff;
+      padding:10px 16px; border-radius:6px; display:none; z-index:9999;
     }
   </style>
 </head>
 <body>
 
   <div class="toolbar">
-    <input type="file" id="uploadExcel" accept=".xlsx" />
-    <button onclick="saveExcel()">💾 保存Excel</button>
-    <button onclick="exportImage()">🖼 导出图片</button>
-    <button onclick="clearData()">🗑 清空</button>
+    <input type="file" id="uploadExcel" accept=".xlsx,.xls" />
+    <button id="btnSave">💾 保存Excel</button>
+    <button id="btnExportImage">🖼 导出图片</button>
+    <button id="btnClear">🗑 清空</button>
   </div>
 
   <div id="luckysheet"></div>
   <div id="toast" class="toast"></div>
 
-  <script>
-    const STORAGE_KEY = "my_luckysheet_data";
-    const GIST_ID = "替换成你自己的Gist ID"; // 你需要先在 GitHub Gist 创建一个 JSON 文件
-    const GITHUB_TOKEN = "替换成你的GitHub Token"; // 用来写入 gist
+<script>
+/* ========== 配置 ========== */
+const STORAGE_KEY = "my_luckysheet_data_v1"; // 本地缓存键名
 
-    function showToast(msg) {
-      let t = document.getElementById("toast");
-      t.innerText = msg;
-      t.style.display = "block";
-      setTimeout(()=> { t.style.display = "none"; }, 2000);
+/* ========== Toast ========== */
+function showToast(msg, ms=1800){
+  const t = document.getElementById("toast");
+  t.innerText = msg; t.style.display = "block";
+  clearTimeout(t._timer);
+  t._timer = setTimeout(()=> t.style.display = "none", ms);
+}
+
+/* ========== 初始化 Luckysheet ========== */
+function initLuckysheet(data){
+  try { luckysheet.destroy(); } catch(e){}
+  luckysheet.create({
+    container: 'luckysheet',
+    showinfobar: false,
+    lang: 'zh',
+    data: data || [{
+      name: "Sheet1",
+      index: 0,
+      status: 1,
+      order: 0,
+      row: 50,
+      column: 20,
+      celldata: [],
+      config: {}
+    }],
+    showsheetbar: true,
+    showtoolbar: true
+  });
+}
+
+/* 读取本地缓存优先加载 */
+window.addEventListener("load", ()=>{
+  let saved = null;
+  try { saved = localStorage.getItem(STORAGE_KEY); } catch(e){}
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      initLuckysheet(parsed);
+      showToast("已加载本地保存的数据");
+      return;
+    } catch(e){
+      console.warn("本地数据解析失败，初始化空表", e);
     }
+  }
+  initLuckysheet(null);
+});
 
-    function initLuckysheet(data) {
-      luckysheet.destroy();
-      luckysheet.create({
-        container: 'luckysheet',
-        showinfobar: false,
-        lang: 'zh',
-        data: data || [{
-          name: "报价表",
-          index: 0,
-          status: 1,
-          order: 0,
-          row: 20,
-          column: 10,
-          celldata: [],
-          config: {}
-        }],
-        showsheetbar: false,
-        showtoolbar: true
-      });
-    }
+/* ========== 辅助：SheetJS -> Luckysheet 转换 ========== */
+/*
+  我们把每个 worksheet 的单元格逐个转换成 Luckysheet 的 celldata 结构。
+  也把合并信息 (!merges) 转成 Luckysheet 的 merge（luckysheet 使用的是 { r, c, rs, cs } 风格）。
+*/
+function sheet_to_luckysheet(ws, sheetName) {
+  const celldata = [];
+  const merges = [];
+  const range = XLSX.utils.decode_range(ws['!ref'] || "A1:A1");
 
-    // === 从 Gist 获取最新数据（跨设备同步）
-    async function loadFromGist() {
-      try {
-        let res = await fetch(`https://api.github.com/gists/${GIST_ID}`);
-        let gist = await res.json();
-        let content = gist.files["data.json"].content;
-        let parsed = JSON.parse(content);
-        initLuckysheet(parsed);
-        localStorage.setItem(STORAGE_KEY, content);
-        showToast("已从云端加载 ✅");
-      } catch (e) {
-        console.warn("云端加载失败，尝试本地数据", e);
-        let saved = localStorage.getItem(STORAGE_KEY);
-        initLuckysheet(saved ? JSON.parse(saved) : null);
+  // 遍历所有单元格：SheetJS 把单元格放在 ws[address]
+  for (let R = range.s.r; R <= range.e.r; ++R) {
+    for (let C = range.s.c; C <= range.e.c; ++C) {
+      const addr = XLSX.utils.encode_cell({r:R,c:C});
+      const cell = ws[addr];
+      if (!cell) continue;
+      // cell.v 原始值，cell.w 格式化文本，cell.f 公式 (string)
+      const displayText = (cell.w !== undefined) ? String(cell.w) : (cell.v !== undefined ? String(cell.v) : "");
+      const rawVal = cell.v;
+      const luckCell = {
+        r: R,
+        c: C,
+        v: { m: displayText, v: rawVal }
+      };
+      // 如果有公式，尝试保留
+      if (cell.f) {
+        // luckysheet 的 celldata 有时期望 f 在顶层或 v.f；我们把 formula 存在 'f' 字段（兼容导出）
+        luckCell.f = cell.f;
       }
+      celldata.push(luckCell);
     }
+  }
 
-    window.onload = loadFromGist;
-
-    // === 导入 Excel（覆盖旧数据）
-    document.getElementById("uploadExcel").addEventListener("change", function(e) {
-      let file = e.target.files[0];
-      if (!file) return;
-
-      if (!confirm("⚠️ 确认要覆盖当前报价表吗？此操作不可撤销！")) {
-        e.target.value = "";
-        return;
-      }
-
-      LuckyExcel.transformExcelToLucky(file, function(exportJson) {
-        if (!exportJson.sheets || exportJson.sheets.length === 0) {
-          alert("Excel内容为空！");
-          return;
-        }
-
-        localStorage.removeItem(STORAGE_KEY);
-        luckysheet.destroy();
-
-        luckysheet.create({
-          container: 'luckysheet',
-          showinfobar: false,
-          lang: 'zh',
-          data: exportJson.sheets,
-          showsheetbar: false,
-          showtoolbar: true
-        });
-
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(exportJson.sheets));
-        showToast("导入成功 ✅");
-        e.target.value = "";
-      }, function(err) {
-        console.error("导入失败", err);
-        alert("导入失败！请检查 Excel 格式。");
+  // 合并单元格转换
+  if (Array.isArray(ws['!merges'])) {
+    ws['!merges'].forEach(m => {
+      // m = {s:{r,c}, e:{r,c}}
+      merges.push({
+        r: m.s.r,
+        c: m.s.c,
+        rs: m.e.r - m.s.r + 1,
+        cs: m.e.c - m.s.c + 1
       });
     });
+  }
 
-    // === 保存 Excel + 上传 Gist（同步云端）
-    async function saveExcel() {
-      let sheets = luckysheet.getAllSheets();
+  // 行列尺寸（给 Luckysheet 一个合理的初始大小）
+  const rowCount = range.e.r + 1;
+  const colCount = range.e.c + 1;
 
-      LuckyExcel.exportLuckyToExcel({ sheets: sheets }, "报价表.xlsx");
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(sheets));
+  return {
+    name: sheetName || "Sheet1",
+    index: 0,
+    status: 1,
+    order: 0,
+    row: Math.max(rowCount, 20),
+    column: Math.max(colCount, 10),
+    celldata: celldata,
+    config: { merge: merges.length? merges: undefined, columnlen: {}, rowlen: {} },
+    // 如果不为空把 merge 放到 merges（luckysheet 支持不同字段名，兼容）
+    // 注意：Luckysheet 有多种版本，提供 merge 放好让渲染使用
+    // 还可以设置 config等更多字段
+  };
+}
 
-      try {
-        await fetch(`https://api.github.com/gists/${GIST_ID}`, {
-          method: "PATCH",
-          headers: {
-            "Authorization": `token ${GITHUB_TOKEN}`,
-            "Accept": "application/vnd.github.v3+json"
-          },
-          body: JSON.stringify({
-            files: {
-              "data.json": {
-                content: JSON.stringify(sheets)
-              }
-            }
-          })
-        });
-        showToast("保存成功 ✅ 已同步云端");
-      } catch (e) {
-        console.error("云端保存失败", e);
-        showToast("保存到本地 ✅（云端失败）");
-      }
-    }
+/* ========== 导入：通过 SheetJS 解析并覆盖 ========== */
+document.getElementById("uploadExcel").addEventListener("change", async function(e){
+  const file = e.target.files[0];
+  if (!file) return;
+  // 强制 .xlsx 更可靠
+  // confirmation
+  if (!confirm("⚠️ 确认覆盖当前表格？（会清除当前本地缓存）")) {
+    e.target.value = "";
+    return;
+  }
 
-    // === 导出为图片
-    function exportImage() {
-      let container = document.getElementById("luckysheet");
-      html2canvas(container, { scale: 2 }).then(canvas => {
-        let link = document.createElement("a");
-        link.download = "报价表.png";
-        link.href = canvas.toDataURL("image/png");
-        link.click();
-        showToast("导出成功 ✅");
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const workbook = XLSX.read(arrayBuffer, {type: "array", cellDates:true, cellNF:true, cellStyles:false});
+    console.log("SheetJS workbook:", workbook);
+    const luckysheets = [];
+
+    workbook.SheetNames.forEach((sheetName, idx) => {
+      const ws = workbook.Sheets[sheetName];
+      const sheet = sheet_to_luckysheet(ws, sheetName);
+      sheet.index = idx;
+      luckysheets.push(sheet);
+    });
+
+    // 覆盖：清缓存 + 销毁实例 + 创建新表
+    try { localStorage.removeItem(STORAGE_KEY); } catch(e){}
+    try { luckysheet.destroy(); } catch(e){}
+    initLuckysheet(luckysheets);
+
+    // 保存到本地（手动保存的要求是“手动保存” — 这里仅做缓存以便下次自动加载）
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(luckysheets)); } catch(e){ console.warn("localStorage写入失败", e); }
+
+    showToast("导入并覆盖完成 ✅");
+    e.target.value = "";
+  } catch (err) {
+    console.error("导入失败：", err);
+    alert("导入失败，请确保文件是标准 .xlsx（在 WPS 里另存为 Excel 工作簿 .xlsx）。控制台查看详细错误。");
+  }
+});
+
+/* ========== 导出：Luckysheet -> SheetJS Workbook，然后下载 ========== */
+/* 这里我们把 luckysheet.getAllSheets() 中的 celldata 转换回 worksheet cells（含公式f） */
+function luckysheet_to_workbook(sheets) {
+  const wb = XLSX.utils.book_new();
+
+  sheets.forEach((sheet) => {
+    const ws = {};
+    let maxR = 0, maxC = 0;
+
+    if (Array.isArray(sheet.celldata)) {
+      sheet.celldata.forEach(cell => {
+        const r = cell.r, c = cell.c;
+        maxR = Math.max(maxR, r);
+        maxC = Math.max(maxC, c);
+
+        const addr = XLSX.utils.encode_cell({r:r, c:c});
+        const vobj = (cell.v && cell.v.v !== undefined) ? cell.v.v : (cell.v ? cell.v : "");
+        // 设置 value
+        ws[addr] = { v: vobj };
+
+        // 如果有格式化文本 m, 也放 w（这是可选）
+        if (cell.v && cell.v.m !== undefined) ws[addr].w = String(cell.v.m);
+
+        // 如果 luckysheet 的 celldata 有 f（公式），设置 .f
+        if (cell.f) {
+          ws[addr].f = cell.f;
+        }
       });
     }
 
-    // === 清空
-    function clearData() {
-      if (!confirm("⚠️ 确认清空所有数据吗？")) return;
-      localStorage.removeItem(STORAGE_KEY);
-      initLuckysheet(null);
-      showToast("已清空 🗑");
+    // 合并（如果有）
+    const merges = [];
+    // luckysheet 中有时把 merges 存在 sheet.config.merge 或 sheet.merge
+    if (sheet.config && sheet.config.merge) {
+      sheet.config.merge.forEach(m => {
+        merges.push({s:{r:m.r,c:m.c}, e:{r:m.r + (m.rs-1), c:m.c + (m.cs-1)}});
+      });
+    } else if (sheet.merge && Array.isArray(sheet.merge)) {
+      sheet.merge.forEach(m => {
+        merges.push({s:{r:m.r,c:m.c}, e:{r:m.r + (m.rs-1), c:m.c + (m.cs-1)}});
+      });
     }
-  </script>
+    if (merges.length) ws['!merges'] = merges;
+
+    // 设置范围
+    const range = {s:{r:0,c:0}, e:{r: Math.max(maxR, sheet.row?sheet.row-1:0), c: Math.max(maxC, sheet.column?sheet.column-1:0)}};
+    ws['!ref'] = XLSX.utils.encode_range(range);
+
+    XLSX.utils.book_append_sheet(wb, ws, sheet.name || "Sheet");
+  });
+
+  return wb;
+}
+
+document.getElementById("btnSave").addEventListener("click", function(){
+  try {
+    const sheets = luckysheet.getAllSheets();
+    // 保存到 localStorage（你要的是手动保存）
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(sheets)); } catch(e){ console.warn("localStorage写入失败", e); }
+
+    // 导出 .xlsx
+    const wb = luckysheet_to_workbook(sheets);
+    XLSX.writeFile(wb, "报价表-导出.xlsx");
+
+    showToast("保存成功 ✅（已下载 Excel，并缓存至本地）");
+  } catch (e) {
+    console.error("保存失败", e);
+    alert("保存失败，控制台查看错误");
+  }
+});
+
+/* ========== 导出图片 ========== */
+document.getElementById("btnExportImage").addEventListener("click", function(){
+  const container = document.getElementById("luckysheet");
+  // html2canvas 截图可能截到超宽，scale 提升图片质量
+  html2canvas(container, { scale: 2 }).then(canvas=>{
+    const link = document.createElement("a");
+    link.download = "报价表.png";
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+    showToast("导出图片成功 ✅");
+  }).catch(err=>{
+    console.error("导出图片失败", err);
+    alert("导出图片失败（控制台有详细信息）");
+  });
+});
+
+/* ========== 清空 ========== */
+document.getElementById("btnClear").addEventListener("click", function(){
+  if (!confirm("确认清空本地数据并恢复空表？")) return;
+  try { localStorage.removeItem(STORAGE_KEY); } catch(e){}
+  initLuckysheet(null);
+  showToast("已清空本地数据 🗑");
+});
+</script>
 
 </body>
 </html>
