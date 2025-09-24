@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-  <title>报价表</title>
+  <title>报价表（支持WPS）</title>
 
   <!-- Luckysheet 样式 -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/luckysheet/dist/plugins/css/pluginsCss.css" />
@@ -15,10 +15,10 @@
   <script src="https://cdn.jsdelivr.net/npm/luckysheet/dist/plugins/js/plugin.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/luckysheet/dist/luckysheet.umd.js"></script>
 
-  <!-- Excel 解析库 -->
+  <!-- Excel 解析库（Luckysheet 内部依赖） -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
-  <!-- 导出图片 -->
+  <!-- html2canvas（导出图片用） -->
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
   <style>
@@ -109,41 +109,19 @@
       }
     };
 
-    // 上传 Excel
+    // 上传 Excel（兼容 WPS）
     document.getElementById("uploadExcel").addEventListener("change", function(e) {
       let file = e.target.files[0];
       let reader = new FileReader();
       reader.onload = function(evt) {
-        let data = new Uint8Array(evt.target.result);
-        let workbook = XLSX.read(data, {type: 'array'});
-        let sheetName = workbook.SheetNames[0];
-        let sheet = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {header: 1});
+        let data = evt.target.result;
 
-        let luckysheetData = [];
-        for (let r = 0; r < sheet.length; r++) {
-          for (let c = 0; c < sheet[r].length; c++) {
-            if (sheet[r][c] !== null && sheet[r][c] !== undefined) {
-              luckysheetData.push({
-                r: r,
-                c: c,
-                v: { m: sheet[r][c].toString(), v: sheet[r][c] }
-              });
-            }
-          }
-        }
-
-        initLuckysheet([{
-          name: sheetName,
-          index: 0,
-          status: 1,
-          order: 0,
-          row: sheet.length + 10,
-          column: sheet[0].length + 5,
-          celldata: luckysheetData
-        }]);
-
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(luckysheet.getAllSheets()));
-        showToast("导入成功 ✅");
+        // 用 Luckysheet 内置的 Excel 转换器，保留样式和公式
+        luckysheet.transExcel.getExcelDataArr(data, function(importJson) {
+          initLuckysheet(importJson);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(importJson));
+          showToast("导入成功 ✅");
+        });
       };
       reader.readAsArrayBuffer(file);
     });
@@ -152,23 +130,14 @@
     function saveExcel() {
       let data = luckysheet.getAllSheets();
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-      let sheet = data[0];
-      let aoa = [];
-      let maxRow = sheet.row, maxCol = sheet.column;
 
-      for (let r = 0; r < maxRow; r++) {
-        let row = [];
-        for (let c = 0; c < maxCol; c++) {
-          let cell = sheet.celldata.find(item => item.r === r && item.c === c);
-          row.push(cell ? cell.v.v : "");
-        }
-        aoa.push(row);
-      }
-
-      let ws = XLSX.utils.aoa_to_sheet(aoa);
-      let wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, sheet.name || "Sheet1");
-      XLSX.writeFile(wb, "报价表.xlsx");
+      // 转换回 Excel 文件并下载
+      let exportExcel = luckysheet.toExcel();
+      let blob = new Blob([exportExcel], { type: "application/octet-stream" });
+      let link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "报价表.xlsx";
+      link.click();
 
       showToast("保存成功 ✅");
     }
