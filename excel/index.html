@@ -37,7 +37,7 @@
   <script>
     const STORAGE_KEY = "quoteSheetData";
 
-    // ✅ 你的 JSONBin 配置（已替换）
+    // ✅ 你的 JSONBin 配置
     const JSONBIN_URL = "https://api.jsonbin.io/v3/b/68d3f5e543b1c97be94e4edc"; 
     const JSONBIN_KEY = "$2a$10$xBzgjtZBWzlqxR.25zIpUOfe8ljxfv2wIaNCFuuONUipmtj5gStGu";
 
@@ -119,9 +119,9 @@
       });
     });
 
-    // ✅ 保存（本地 + 云端）
+    // ✅ 保存（本地 + 云端 + 样式 + 公式）
     async function saveSheet(){
-      const data=luckysheet.getAllSheets();
+      const data=luckysheet.getLuckysheetfile(); // 🔑 保存完整数据（含样式+公式）
       localStorage.setItem(STORAGE_KEY,JSON.stringify(data));
       await saveToCloud(data);
       // 同时下载 Excel 文件
@@ -131,7 +131,7 @@
         a.download="报价单.xlsx";
         a.click();
       });
-      showToast("✅ 已保存（本地+云端）");
+      showToast("✅ 已保存（含样式+公式+本地+云端）");
     }
 
     // ✅ 保存到云端
