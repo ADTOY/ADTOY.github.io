@@ -37,6 +37,10 @@
   <script>
     const STORAGE_KEY = "quoteSheetData";
 
+    // ✅ 你的 JSONBin 配置（已替换）
+    const JSONBIN_URL = "https://api.jsonbin.io/v3/b/68d3f5e543b1c97be94e4edc"; 
+    const JSONBIN_KEY = "$2a$10$xBzgjtZBWzlqxR.25zIpUOfe8ljxfv2wIaNCFuuONUipmtj5gStGu";
+
     // ✅ Toast 提示
     function showToast(msg){
       const t=document.getElementById("toast");
@@ -109,15 +113,17 @@
         }
         let sheets=exportJson.sheets.map(s=>sanitizeCelldata(fixSheetSize(s)));
         localStorage.setItem(STORAGE_KEY,JSON.stringify(sheets));
+        saveToCloud(sheets);
         initLuckysheet(sheets);
         showToast("✅ 导入成功");
       });
     });
 
-    // ✅ 保存
-    function saveSheet(){
+    // ✅ 保存（本地 + 云端）
+    async function saveSheet(){
       const data=luckysheet.getAllSheets();
       localStorage.setItem(STORAGE_KEY,JSON.stringify(data));
+      await saveToCloud(data);
       // 同时下载 Excel 文件
       luckysheet.exportExcel().then(excelFile=>{
         const a=document.createElement("a");
@@ -125,7 +131,42 @@
         a.download="报价单.xlsx";
         a.click();
       });
-      showToast("✅ 已保存");
+      showToast("✅ 已保存（本地+云端）");
+    }
+
+    // ✅ 保存到云端
+    async function saveToCloud(data){
+      try{
+        await fetch(JSONBIN_URL, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Master-Key": JSONBIN_KEY
+          },
+          body: JSON.stringify(data)
+        });
+      }catch(e){
+        console.error("云端保存失败:",e);
+        showToast("⚠️ 云端保存失败，仅保存本地");
+      }
+    }
+
+    // ✅ 从云端加载
+    async function loadFromCloud(){
+      try{
+        const res = await fetch(JSONBIN_URL+"/latest", {
+          headers: {"X-Master-Key": JSONBIN_KEY}
+        });
+        const json = await res.json();
+        if(json.record){
+          initLuckysheet(json.record);
+          showToast("☁️ 已加载云端数据");
+          return true;
+        }
+      }catch(e){
+        console.warn("云端加载失败:",e);
+      }
+      return false;
     }
 
     // ✅ 导出 Excel
@@ -159,18 +200,22 @@
       }
     }
 
-    // ✅ 页面加载时恢复
-    window.onload=function(){
-      let saved=localStorage.getItem(STORAGE_KEY);
-      if(saved){
-        try{
-          initLuckysheet(JSON.parse(saved));
-        }catch(e){
-          console.warn("缓存损坏，恢复空表");
+    // ✅ 页面加载时：优先云端 → 其次本地 → 最后空表
+    window.onload=async function(){
+      const ok = await loadFromCloud();
+      if(!ok){
+        let saved=localStorage.getItem(STORAGE_KEY);
+        if(saved){
+          try{
+            initLuckysheet(JSON.parse(saved));
+            showToast("📂 已加载本地缓存");
+          }catch(e){
+            console.warn("缓存损坏，恢复空表");
+            initLuckysheet(null);
+          }
+        }else{
           initLuckysheet(null);
         }
-      }else{
-        initLuckysheet(null);
       }
     }
   </script>
