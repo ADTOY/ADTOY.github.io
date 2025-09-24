@@ -54,30 +54,6 @@
       document.getElementById("luckysheet").innerHTML="";
     }
 
-    // ✅ 修复行列数
-    function fixSheetSize(sheet){
-      let maxR=0,maxC=0;
-      if(sheet.celldata){
-        sheet.celldata.forEach(cell=>{
-          if(cell.r>maxR) maxR=cell.r;
-          if(cell.c>maxC) maxC=cell.c;
-        });
-      }
-      sheet.row=Math.max(sheet.row||0,maxR+20);
-      sheet.column=Math.max(sheet.column||0,maxC+10);
-      if(!sheet.config) sheet.config={};
-      return sheet;
-    }
-
-    // ✅ 过滤非法单元格
-    function sanitizeCelldata(sheet){
-      if(!sheet.celldata) return sheet;
-      sheet.celldata=sheet.celldata.filter(cell=>{
-        return cell && typeof cell.r==="number" && typeof cell.c==="number" && cell.v;
-      });
-      return sheet;
-    }
-
     // ✅ 初始化 Luckysheet
     function initLuckysheet(data){
       resetLuckysheetDOM();
@@ -111,7 +87,7 @@
           showToast("⚠️ 无法解析文件");
           return;
         }
-        let sheets=exportJson.sheets.map(s=>sanitizeCelldata(fixSheetSize(s)));
+        let sheets=exportJson.sheets;
         localStorage.setItem(STORAGE_KEY,JSON.stringify(sheets));
         saveToCloud(sheets);
         initLuckysheet(sheets);
@@ -119,11 +95,12 @@
       });
     });
 
-    // ✅ 保存（本地 + 云端 + 样式 + 公式）
+    // ✅ 保存（本地 + 云端，确保输入不丢失）
     async function saveSheet(){
-      const data=luckysheet.getLuckysheetfile(); // 🔑 保存完整数据（含样式+公式）
+      const data=luckysheet.getAllSheets(); // 🔑 最新状态
       localStorage.setItem(STORAGE_KEY,JSON.stringify(data));
       await saveToCloud(data);
+
       // 同时下载 Excel 文件
       luckysheet.exportExcel().then(excelFile=>{
         const a=document.createElement("a");
@@ -131,7 +108,8 @@
         a.download="报价单.xlsx";
         a.click();
       });
-      showToast("✅ 已保存（含样式+公式+本地+云端）");
+
+      showToast("✅ 已保存（实时数据+云端+Excel）");
     }
 
     // ✅ 保存到云端
