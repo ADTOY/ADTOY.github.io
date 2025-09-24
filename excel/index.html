@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-  <title>支持样式导入 Excel ⇢ Luckysheet</title>
+  <title>报价表（支持WPS导入覆盖）</title>
 
   <!-- Luckysheet 样式 -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/luckysheet/dist/plugins/css/pluginsCss.css" />
@@ -15,10 +15,10 @@
   <script src="https://cdn.jsdelivr.net/npm/luckysheet/dist/plugins/js/plugin.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/luckysheet/dist/luckysheet.umd.js"></script>
 
-  <!-- LuckyExcel：Excel ↔ Luckysheet 样式导入导出 -->
+  <!-- LuckyExcel：Excel ↔ Luckysheet（支持样式） -->
   <script src="https://cdn.jsdelivr.net/gh/oy-paddy/luckysheet_import_export/dist/luckyexcel.js"></script>
 
-  <!-- html2canvas 用于图片导出 -->
+  <!-- html2canvas：导出图片 -->
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
   <style>
@@ -83,7 +83,7 @@
         showinfobar: false,
         lang: 'zh',
         data: data || [{
-          name: "Sheet1",
+          name: "报价表",
           index: 0,
           status: 1,
           order: 0,
@@ -97,6 +97,7 @@
       });
     }
 
+    // 页面加载时 → 读取本地数据
     window.onload = function() {
       let saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
@@ -111,25 +112,40 @@
       }
     };
 
-    // 上传 Excel，用 LuckyExcel 转换
+    // 导入 Excel（覆盖旧数据）
     document.getElementById("uploadExcel").addEventListener("change", function(e) {
       let file = e.target.files[0];
       if (!file) return;
+
       LuckyExcel.transformExcelToLucky(file, function(exportJson) {
-        // exportJson.sheets 是一个数组，直接给 Luckysheet 用
-        initLuckysheet(exportJson.sheets);
+        if (!exportJson.sheets || exportJson.sheets.length === 0) {
+          alert("Excel内容为空！");
+          return;
+        }
+
+        // ✅ 覆盖旧表格：销毁再创建
+        luckysheet.destroy();
+        luckysheet.create({
+          container: 'luckysheet',
+          showinfobar: false,
+          lang: 'zh',
+          data: exportJson.sheets,
+          showsheetbar: false,
+          showtoolbar: true
+        });
+
         localStorage.setItem(STORAGE_KEY, JSON.stringify(exportJson.sheets));
         showToast("导入成功 ✅");
-      }, function(error) {
-        console.error("导入失败", error);
+      }, function(err) {
+        console.error("导入失败", err);
         alert("导入失败！请检查 Excel 格式。");
       });
     });
 
-    // 保存 Excel（从 Luckysheet 导出 Excel）
+    // 保存 Excel
     function saveExcel() {
       let sheets = luckysheet.getAllSheets();
-      // 用 LuckyExcel 或者 Luckysheet 自带导出
+
       LuckyExcel.exportLuckyToExcel({
         sheets: sheets
       }, "报价表.xlsx");
