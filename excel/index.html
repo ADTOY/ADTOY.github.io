@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-  <title>报价表（支持WPS）</title>
+  <title>支持样式导入 Excel ⇢ Luckysheet</title>
 
   <!-- Luckysheet 样式 -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/luckysheet/dist/plugins/css/pluginsCss.css" />
@@ -15,15 +15,15 @@
   <script src="https://cdn.jsdelivr.net/npm/luckysheet/dist/plugins/js/plugin.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/luckysheet/dist/luckysheet.umd.js"></script>
 
-  <!-- Excel 解析库（Luckysheet 内部依赖） -->
-  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  <!-- LuckyExcel：Excel ↔ Luckysheet 样式导入导出 -->
+  <script src="https://cdn.jsdelivr.net/gh/oy-paddy/luckysheet_import_export/dist/luckyexcel.js"></script>
 
-  <!-- html2canvas（导出图片用） -->
+  <!-- html2canvas 用于图片导出 -->
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
   <style>
     body { margin: 0; padding: 0; font-family: sans-serif; }
-    #luckysheet { width: 100%; height: calc(100vh - 60px); margin: 0 auto; }
+    #luckysheet { width: 100%; height: calc(100vh - 60px); }
     .toolbar {
       display: flex;
       flex-wrap: wrap;
@@ -57,7 +57,7 @@
 <body>
 
   <div class="toolbar">
-    <input type="file" id="uploadExcel" accept=".xlsx,.xls" />
+    <input type="file" id="uploadExcel" accept=".xlsx" />
     <button onclick="saveExcel()">💾 保存Excel</button>
     <button onclick="exportImage()">🖼 导出图片</button>
     <button onclick="clearData()">🗑 清空</button>
@@ -70,12 +70,10 @@
     const STORAGE_KEY = "my_luckysheet_data";
 
     function showToast(msg) {
-      let toast = document.getElementById("toast");
-      toast.innerText = msg;
-      toast.style.display = "block";
-      setTimeout(() => {
-        toast.style.display = "none";
-      }, 2000);
+      let t = document.getElementById("toast");
+      t.innerText = msg;
+      t.style.display = "block";
+      setTimeout(()=> { t.style.display = "none"; }, 2000);
     }
 
     function initLuckysheet(data) {
@@ -85,7 +83,7 @@
         showinfobar: false,
         lang: 'zh',
         data: data || [{
-          name: "报价表",
+          name: "Sheet1",
           index: 0,
           status: 1,
           order: 0,
@@ -99,46 +97,44 @@
       });
     }
 
-    // 加载本地保存的数据
     window.onload = function() {
-      let savedData = localStorage.getItem(STORAGE_KEY);
-      if (savedData) {
-        initLuckysheet(JSON.parse(savedData));
+      let saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        try {
+          initLuckysheet(JSON.parse(saved));
+        } catch (e) {
+          console.error("本地数据加载失败", e);
+          initLuckysheet(null);
+        }
       } else {
         initLuckysheet(null);
       }
     };
 
-    // 上传 Excel（兼容 WPS）
+    // 上传 Excel，用 LuckyExcel 转换
     document.getElementById("uploadExcel").addEventListener("change", function(e) {
       let file = e.target.files[0];
-      let reader = new FileReader();
-      reader.onload = function(evt) {
-        let data = evt.target.result;
-
-        // 用 Luckysheet 内置的 Excel 转换器，保留样式和公式
-        luckysheet.transExcel.getExcelDataArr(data, function(importJson) {
-          initLuckysheet(importJson);
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(importJson));
-          showToast("导入成功 ✅");
-        });
-      };
-      reader.readAsArrayBuffer(file);
+      if (!file) return;
+      LuckyExcel.transformExcelToLucky(file, function(exportJson) {
+        // exportJson.sheets 是一个数组，直接给 Luckysheet 用
+        initLuckysheet(exportJson.sheets);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(exportJson.sheets));
+        showToast("导入成功 ✅");
+      }, function(error) {
+        console.error("导入失败", error);
+        alert("导入失败！请检查 Excel 格式。");
+      });
     });
 
-    // 保存 Excel
+    // 保存 Excel（从 Luckysheet 导出 Excel）
     function saveExcel() {
-      let data = luckysheet.getAllSheets();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      let sheets = luckysheet.getAllSheets();
+      // 用 LuckyExcel 或者 Luckysheet 自带导出
+      LuckyExcel.exportLuckyToExcel({
+        sheets: sheets
+      }, "报价表.xlsx");
 
-      // 转换回 Excel 文件并下载
-      let exportExcel = luckysheet.toExcel();
-      let blob = new Blob([exportExcel], { type: "application/octet-stream" });
-      let link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = "报价表.xlsx";
-      link.click();
-
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(sheets));
       showToast("保存成功 ✅");
     }
 
@@ -154,7 +150,7 @@
       });
     }
 
-    // 清空数据
+    // 清空
     function clearData() {
       localStorage.removeItem(STORAGE_KEY);
       initLuckysheet(null);
