@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-  <title>报价表（支持WPS导入覆盖）</title>
+  <title>报价表（支持覆盖+跨设备同步）</title>
 
   <!-- Luckysheet 样式 -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/luckysheet/dist/plugins/css/pluginsCss.css" />
@@ -68,6 +68,8 @@
 
   <script>
     const STORAGE_KEY = "my_luckysheet_data";
+    const GIST_ID = "替换成你自己的Gist ID"; // 你需要先在 GitHub Gist 创建一个 JSON 文件
+    const GITHUB_TOKEN = "替换成你的GitHub Token"; // 用来写入 gist
 
     function showToast(msg) {
       let t = document.getElementById("toast");
@@ -97,25 +99,34 @@
       });
     }
 
-    // 页面加载时 → 读取本地数据
-    window.onload = function() {
-      let saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        try {
-          initLuckysheet(JSON.parse(saved));
-        } catch (e) {
-          console.error("本地数据加载失败", e);
-          initLuckysheet(null);
-        }
-      } else {
-        initLuckysheet(null);
+    // === 从 Gist 获取最新数据（跨设备同步）
+    async function loadFromGist() {
+      try {
+        let res = await fetch(`https://api.github.com/gists/${GIST_ID}`);
+        let gist = await res.json();
+        let content = gist.files["data.json"].content;
+        let parsed = JSON.parse(content);
+        initLuckysheet(parsed);
+        localStorage.setItem(STORAGE_KEY, content);
+        showToast("已从云端加载 ✅");
+      } catch (e) {
+        console.warn("云端加载失败，尝试本地数据", e);
+        let saved = localStorage.getItem(STORAGE_KEY);
+        initLuckysheet(saved ? JSON.parse(saved) : null);
       }
-    };
+    }
 
-    // 导入 Excel（覆盖旧数据）
+    window.onload = loadFromGist;
+
+    // === 导入 Excel（覆盖旧数据）
     document.getElementById("uploadExcel").addEventListener("change", function(e) {
       let file = e.target.files[0];
       if (!file) return;
+
+      if (!confirm("⚠️ 确认要覆盖当前报价表吗？此操作不可撤销！")) {
+        e.target.value = "";
+        return;
+      }
 
       LuckyExcel.transformExcelToLucky(file, function(exportJson) {
         if (!exportJson.sheets || exportJson.sheets.length === 0) {
@@ -123,8 +134,9 @@
           return;
         }
 
-        // ✅ 覆盖旧表格：销毁再创建
+        localStorage.removeItem(STORAGE_KEY);
         luckysheet.destroy();
+
         luckysheet.create({
           container: 'luckysheet',
           showinfobar: false,
@@ -136,25 +148,43 @@
 
         localStorage.setItem(STORAGE_KEY, JSON.stringify(exportJson.sheets));
         showToast("导入成功 ✅");
+        e.target.value = "";
       }, function(err) {
         console.error("导入失败", err);
         alert("导入失败！请检查 Excel 格式。");
       });
     });
 
-    // 保存 Excel
-    function saveExcel() {
+    // === 保存 Excel + 上传 Gist（同步云端）
+    async function saveExcel() {
       let sheets = luckysheet.getAllSheets();
 
-      LuckyExcel.exportLuckyToExcel({
-        sheets: sheets
-      }, "报价表.xlsx");
-
+      LuckyExcel.exportLuckyToExcel({ sheets: sheets }, "报价表.xlsx");
       localStorage.setItem(STORAGE_KEY, JSON.stringify(sheets));
-      showToast("保存成功 ✅");
+
+      try {
+        await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+          method: "PATCH",
+          headers: {
+            "Authorization": `token ${GITHUB_TOKEN}`,
+            "Accept": "application/vnd.github.v3+json"
+          },
+          body: JSON.stringify({
+            files: {
+              "data.json": {
+                content: JSON.stringify(sheets)
+              }
+            }
+          })
+        });
+        showToast("保存成功 ✅ 已同步云端");
+      } catch (e) {
+        console.error("云端保存失败", e);
+        showToast("保存到本地 ✅（云端失败）");
+      }
     }
 
-    // 导出为图片
+    // === 导出为图片
     function exportImage() {
       let container = document.getElementById("luckysheet");
       html2canvas(container, { scale: 2 }).then(canvas => {
@@ -166,8 +196,9 @@
       });
     }
 
-    // 清空
+    // === 清空
     function clearData() {
+      if (!confirm("⚠️ 确认清空所有数据吗？")) return;
       localStorage.removeItem(STORAGE_KEY);
       initLuckysheet(null);
       showToast("已清空 🗑");
